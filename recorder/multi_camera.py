@@ -3,7 +3,7 @@ import time
 import logging
 from typing import List, Dict, Optional
 from .camera import CameraCapture
-from .utils import _maintain_fps, should_stop
+from .utils import _maintain_fps, should_stop, find_available_camera_from_list
 
 logger = logging.getLogger(__name__)
 
@@ -20,23 +20,28 @@ class MultiCameraCapture:
         self.threads: List[threading.Thread] = []
 
     def detect_available_cameras(self) -> Dict:
-        """Detect and start available cameras, returning started CameraCapture objects."""
+        """Detect and start available cameras using priority-based selection."""
         available_cameras: Dict = {}
 
         for camera_id in self.camera_ids:
-            camera = CameraCapture(camera_id, self.output_dir, self.fps)
-            if camera.start():
-                # Test if we can actually capture a frame
-                frame = camera.capture_frame()
-                if frame is not None:
-                    logger.info(f"Camera {camera_id} is available")
-                    available_cameras[camera_id] = camera
-                    continue
-                # If frame capture failed, release the resource
-                camera.stop()
-                logger.debug(f"Camera {camera_id} opened but failed to capture a frame")
+            # Use priority-based camera selection for each requested camera
+            best_camera = find_available_camera_from_list([camera_id])
+            if best_camera is not None:
+                camera = CameraCapture(best_camera, self.output_dir, self.fps, use_mock_mode=True)
+                if camera.start():
+                    # Test if we can actually capture a frame
+                    frame = camera.capture_frame()
+                    if frame is not None:
+                        logger.info(f"Camera {camera_id} -> using camera {best_camera}")
+                        available_cameras[camera_id] = camera
+                        continue
+                    # If frame capture failed, release the resource
+                    camera.stop()
+                    logger.debug(f"Camera {best_camera} opened but failed to capture a frame")
+                else:
+                    logger.debug(f"Camera {best_camera} failed to start")
             else:
-                logger.debug(f"Camera {camera_id} is not available")
+                logger.debug(f"No available camera found for requested camera {camera_id}")
 
         return available_cameras
 

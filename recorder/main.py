@@ -5,7 +5,7 @@ from pathlib import Path
 
 from .camera import CameraCapture
 from .multi_camera import MultiCameraCapture
-from .utils import load_config, get_setting, list_available_cameras, IS_WINDOWS, IS_LINUX, IS_JETSON
+from .utils import load_config, get_setting, list_available_cameras, find_available_camera_from_list, IS_WINDOWS, IS_LINUX, IS_JETSON
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -13,8 +13,8 @@ logger = logging.getLogger(__name__)
 
 def main():
     parser = argparse.ArgumentParser(description="Multi-Camera Capture System for Jetson")
-    parser.add_argument("--config", type=str, default="./config.yaml",
-                       help="Path to YAML config with cameras/output_dir/fps/duration (default: ./config.yaml)")
+    parser.add_argument("--config", type=str, default="./recorder/config.yaml",
+                       help="Path to YAML config with cameras/output_dir/fps/duration (default: ./recorder/config.yaml)")
     parser.add_argument("--cameras", nargs="+", default=None,
                        help="Camera IDs or names to capture from (overrides config). On Windows, use names like 'Integrated Webcam'")
     parser.add_argument("--output", type=str, default=None,
@@ -56,7 +56,7 @@ def main():
 
     # Determine effective settings with CLI overriding config, and sensible defaults
     effective_cameras = get_setting(args.cameras, config_data.get("cameras"), [0])
-    # Only coerce to int on Linux. On Windows/macOS, keep strings to support backend requirements.
+    # Only coerce to int on Linux. On Windows/macOS, keep original types for consistent behavior.
     if IS_LINUX:
         try:
             effective_cameras = [int(cam) for cam in effective_cameras] if effective_cameras else [0]
@@ -78,14 +78,20 @@ def main():
     logger.info(f"Output directory: {output_dir}")
     logger.info(f"FPS: {effective_fps}")
 
-    # Choose the appropriate capture system based on camera count
+    # Find the best available camera from the priority list
     if len(effective_cameras) == 1:
-        # Use single camera mode for better performance
-        logger.info("Single camera detected - using optimized single camera mode")
-        camera = CameraCapture(effective_cameras[0], str(output_dir), effective_fps)
-        camera.run(effective_duration)
+        # Single camera mode - try to find the best available camera
+        best_camera = find_available_camera_from_list(effective_cameras)
+        if best_camera is not None:
+            logger.info(f"Single camera mode - using camera {best_camera}")
+            camera = CameraCapture(best_camera, str(output_dir), effective_fps, use_mock_mode=True)
+            camera.run(effective_duration)
+        else:
+            logger.error("No cameras available - falling back to mock mode")
+            camera = CameraCapture(effective_cameras[0], str(output_dir), effective_fps, use_mock_mode=True)
+            camera.run(effective_duration)
     else:
-        # Use multi-camera mode with threading
+        # Multi-camera mode - let MultiCameraCapture handle priority selection
         logger.info("Multiple cameras detected - using threaded multi-camera mode")
         capture_system = MultiCameraCapture(effective_cameras, str(output_dir), effective_fps)
         capture_system.run(effective_duration)

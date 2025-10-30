@@ -126,6 +126,10 @@ class CameraCapture:
             self.is_running = True
             if self.use_mock_mode:
                 self.mock_mode = True
+                # Update output directory to use mock_camera folder
+                self.output_dir = self.output_dir.parent / "mock_camera"
+                self.output_dir.mkdir(parents=True, exist_ok=True)
+                logger.info(f"Mock mode enabled - using output directory: {self.output_dir}")
             else:
                 return False
             # Try to parse desired video size from options if present

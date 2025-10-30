@@ -114,6 +114,31 @@ def list_available_cameras() -> List:
     return available_cameras
 
 
+def find_available_camera_from_list(camera_ids: List) -> Optional[int]:
+    """Find the first available camera from a priority list, or any available camera."""
+    # First, try each camera in the specified order
+    for camera_id in camera_ids:
+        if IS_WINDOWS:
+            resolved = resolve_windows_camera_name(camera_id)
+            if resolved is not None:
+                return resolved
+        else:
+            # On Linux, test the camera directly
+            try:
+                device_id = int(camera_id) if isinstance(camera_id, (str, int)) else camera_id
+                cap = cv2.VideoCapture(device_id)
+                if cap.isOpened():
+                    cap.release()
+                    return device_id
+                cap.release()
+            except:
+                continue
+    
+    # If none of the specified cameras work, try to find any available camera
+    available_cameras = list_available_cameras()
+    return available_cameras[0] if available_cameras else None
+
+
 def resolve_windows_camera_name(camera_id) -> Optional[int]:
     """Best-effort: map a camera_id to a working OpenCV camera index."""
     if isinstance(camera_id, int):
@@ -126,8 +151,19 @@ def resolve_windows_camera_name(camera_id) -> Optional[int]:
             cap.release()
         except:
             pass
+    elif isinstance(camera_id, str):
+        # Try to convert string to integer and test
+        try:
+            cam_int = int(camera_id)
+            cap = cv2.VideoCapture(cam_int)
+            if cap.isOpened():
+                cap.release()
+                return cam_int
+            cap.release()
+        except:
+            pass
     
-    # If string or failed integer, try to find first available camera
+    # If specified camera doesn't work, try to find first available camera
     for i in range(10):
         try:
             cap = cv2.VideoCapture(i)
